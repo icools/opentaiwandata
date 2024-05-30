@@ -38,6 +38,7 @@ def transform_data(data):
         "人口數(人)", "人口增加率(‰)", "男性人口數(人)", "女性人口數(人)",
         "人口性比例(每百女子所當男子數)", "戶量(人/戶)", "人口密度(人/平方公里)"
     ])
+    df.index = pd.date_range(start='2019-01-01', periods=len(df), freq='M')
     return df
 
 # 嘗試抓取網路資料，失敗則使用本地資料
@@ -60,12 +61,41 @@ st.write(df)
 # 繪製圖表
 st.write("### 人口數變化趨勢")
 line_chart = alt.Chart(df.reset_index()).mark_line().encode(
-    x='index:O',
+    x='index:T',
     y='人口數(人):Q',
-    tooltip=['index', '人口數(人)']
+    tooltip=['index:T', '人口數(人)']
 ).properties(
     width=800,
     height=400
 )
 
 st.altair_chart(line_chart)
+
+# 男女人口走勢圖
+st.write("### 男女人口數變化趨勢")
+gender_chart = alt.Chart(df.reset_index()).mark_line().encode(
+    x='index:T',
+    y='value:Q',
+    color='variable:N'
+).transform_fold(
+    ['男性人口數(人)', '女性人口數(人)'],
+    as_=['variable', 'value']
+).properties(
+    width=800,
+    height=400
+)
+
+st.altair_chart(gender_chart)
+
+# 人口增加率圖表
+st.write("### 人口增加率變化趨勢")
+growth_rate_chart = alt.Chart(df.reset_index()).mark_bar().encode(
+    x='index:T',
+    y='人口增加率(‰):Q',
+    tooltip=['index:T', '人口增加率(‰)']
+).properties(
+    width=800,
+    height=400
+)
+
+st.altair_chart(growth_rate_chart)
