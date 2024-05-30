@@ -1,110 +1,71 @@
-import streamlit as st 
+import streamlit as st
 import pandas as pd
+import altair as alt
+import requests
+import json
 
-st.balloons()
-st.markdown("# Data Evaluation App")
-
-st.write("We are so glad to see you here. ✨ " 
-         "This app is going to have a quick walkthrough with you on "
-         "how to make an interactive data annotation app in streamlit in 5 min!")
-
-st.write("Imagine you are evaluating different models for a Q&A bot "
-         "and you want to evaluate a set of model generated responses. "
-        "You have collected some user data. "
-         "Here is a sample question and response set.")
-
-data = {
-    "Questions": 
-        ["Who invented the internet?"
-        , "What causes the Northern Lights?"
-        , "Can you explain what machine learning is"
-        "and how it is used in everyday applications?"
-        , "How do penguins fly?"
-    ],           
-    "Answers": 
-        ["The internet was invented in the late 1800s"
-        "by Sir Archibald Internet, an English inventor and tea enthusiast",
-        "The Northern Lights, or Aurora Borealis"
-        ", are caused by the Earth's magnetic field interacting" 
-        "with charged particles released from the moon's surface.",
-        "Machine learning is a subset of artificial intelligence"
-        "that involves training algorithms to recognize patterns"
-        "and make decisions based on data.",
-        " Penguins are unique among birds because they can fly underwater. "
-        "Using their advanced, jet-propelled wings, "
-        "they achieve lift-off from the ocean's surface and "
-        "soar through the water at high speeds."
-    ]
-}
-
-df = pd.DataFrame(data)
-
-st.write(df)
-
-st.write("Now I want to evaluate the responses from my model. "
-         "One way to achieve this is to use the very powerful `st.data_editor` feature. "
-         "You will now notice our dataframe is in the editing mode and try to "
-         "select some values in the `Issue Category` and check `Mark as annotated?` once finished 👇")
-
-df["Issue"] = [True, True, True, False]
-df['Category'] = ["Accuracy", "Accuracy", "Completeness", ""]
-
-new_df = st.data_editor(
-    df,
-    column_config = {
-        "Questions":st.column_config.TextColumn(
-            width = "medium",
-            disabled=True
-        ),
-        "Answers":st.column_config.TextColumn(
-            width = "medium",
-            disabled=True
-        ),
-        "Issue":st.column_config.CheckboxColumn(
-            "Mark as annotated?",
-            default = False
-        ),
-        "Category":st.column_config.SelectboxColumn
-        (
-        "Issue Category",
-        help = "select the category",
-        options = ['Accuracy', 'Relevance', 'Coherence', 'Bias', 'Completeness'],
-        required = False
-        )
-    }
+# 設定頁面配置，隱藏 GitHub 圖標
+st.set_page_config(
+    page_title="台灣人口指數資料",
+    page_icon=":bar_chart:",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-st.write("You will notice that we changed our dataframe and added new data. "
-         "Now it is time to visualize what we have annotated!")
+# 抓取台灣人口指數資料
+@st.cache_data(ttl=300)
+def fetch_population_data():
+    url = "https://nstatdb.dgbas.gov.tw/dgbasall/webMain.aspx?sdmx/a130201010/1+2+3+4+5+6+7+8+9+10+11+12...M.&startTime=2019&endTime=2024-M4"
+    response = requests.get(url)
+    data = response.json()
+    return data
 
-st.divider()
+# 讀取本地JSON文件作為備份
+def load_local_data(filepath):
+    with open(filepath, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    return data
 
-st.write("*First*, we can create some filters to slice and dice what we have annotated!")
+# 轉換資料格式
+def transform_data(data):
+    observations = data['data']['dataSets'][0]['series']
+    transformed_data = {}
+    for key, value in observations.items():
+        for idx, obs in value['observations'].items():
+            transformed_data.setdefault(idx, []).append(obs[0])
+    df = pd.DataFrame.from_dict(transformed_data, orient='index', columns=[
+        "土地面積(平方公里)", "鄉鎮市區數", "村里數", "鄰數", "戶數(戶)",
+        "人口數(人)", "人口增加率(‰)", "男性人口數(人)", "女性人口數(人)",
+        "人口性比例(每百女子所當男子數)", "戶量(人/戶)", "人口密度(人/平方公里)"
+    ])
+    return df
 
-col1, col2 = st.columns([1,1])
-with col1:
-    issue_filter = st.selectbox("Issues or Non-issues", options = new_df.Issue.unique())
-with col2:
-    category_filter = st.selectbox("Choose a category", options  = new_df[new_df["Issue"]==issue_filter].Category.unique())
+# 嘗試抓取網路資料，失敗則使用本地資料
+try:
+    data = fetch_population_data()
+except:
+    st.warning("無法抓取網路資料，使用本地備份資料")
+    data = load_local_data('/mnt/data/a13020101031210457254.json')
 
-st.dataframe(new_df[(new_df['Issue'] == issue_filter) & (new_df['Category'] == category_filter)])
+# 轉換資料
+df = transform_data(data)
 
-st.markdown("")
-st.write("*Next*, we can visualize our data quickly using `st.metrics` and `st.bar_plot`")
+# Streamlit UI
+st.title("台灣人口指數資料")
 
-issue_cnt = len(new_df[new_df['Issue']==True])
-total_cnt = len(new_df)
-issue_perc = f"{issue_cnt/total_cnt*100:.0f}%"
+# 顯示資料表
+st.write("### 人口指數資料表")
+st.write(df)
 
-col1, col2 = st.columns([1,1])
-with col1:
-    st.metric("Number of responses",issue_cnt)
-with col2:
-    st.metric("Annotation Progress", issue_perc)
+# 繪製圖表
+st.write("### 人口數變化趨勢")
+line_chart = alt.Chart(df.reset_index()).mark_line().encode(
+    x='index:O',
+    y='人口數(人):Q',
+    tooltip=['index', '人口數(人)']
+).properties(
+    width=800,
+    height=400
+)
 
-df_plot = new_df[new_df['Category']!=''].Category.value_counts().reset_index()
-
-st.bar_chart(df_plot, x = 'Category', y = 'count')
-
-st.write("Here we are at the end of getting started with streamlit! Happy Streamlit-ing! :balloon:")
-
+st.altair_chart(line_chart)
